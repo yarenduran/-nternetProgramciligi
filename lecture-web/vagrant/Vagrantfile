@@ -1,0 +1,63 @@
+require 'yaml'
+require 'fileutils'
+
+
+domains = {
+   portalgece: 'portalgece'
+}
+
+config = {
+  local: './config/vagrant-local.yml',
+  example: './config/vagrant-local.example.yml'
+}
+
+FileUtils.cp config[:example], config[:local] unless File.exist?(config[:local])
+options = YAML.load_file config[:local]
+
+if options['github_token'].nil? || options['github_token'].to_s.length != 40
+  puts "You must place REAL GitHub token into configuration:\n/vagrant/config/vagrant-local.yml"
+  exit
+end
+
+
+Vagrant.configure("2") do |config|
+  
+  config.vm.box = "ubuntu/xenial32"
+  
+
+  config.vm.box_check_update = options['box_check_update']
+
+  config.vm.provider 'virtualbox' do |vb|
+    # machine cpus count
+    vb.cpus = options['cpus']
+    # machine memory size
+    vb.memory = options['memory']
+    # machine name (for VirtualBox UI)
+    vb.name = options['machine_name']
+  end
+
+  config.vm.define options['machine_name']
+
+  config.vm.hostname = options['machine_name']
+
+  config.vm.network 'private_network', ip: options['ip']
+
+  config.vm.synced_folder '../portalgece', '/var/www/portalgece', id: "vagrant-portalgece",
+    owner: "vagrant",
+    group: "www-data",
+    mount_options: ["dmode=775,fmode=664"]
+
+    config.vm.synced_folder '.', '/vagrant'
+
+  config.vm.provision :hostmanager
+  config.hostmanager.enabled            = true
+  config.hostmanager.manage_host        = true
+  config.hostmanager.ignore_private_ip  = false
+  config.hostmanager.include_offline    = true
+  config.hostmanager.aliases            = domains.values
+
+
+  config.vm.provision 'shell', path: './provision/once-as-root.sh', args: [options['timezone'],options['github_token']]
+  config.vm.provision 'shell', path: './provision/always-as-root.sh', run: 'always' 
+
+end
